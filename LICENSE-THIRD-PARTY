@@ -1,3 +1,4 @@
+baz
 The Cargo source code itself does not bundle any third party libraries, but it
 depends on a number of libraries which carry their own copyright notices and
 license terms. These libraries are normally all linked static into the binary
