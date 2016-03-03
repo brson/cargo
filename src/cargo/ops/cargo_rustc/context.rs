@@ -47,7 +47,6 @@ pub struct Context<'a, 'cfg: 'a> {
     target_info: TargetInfo,
     host_info: TargetInfo,
     profiles: &'a Profiles,
-    rustflags: Option<String>,
 }
 
 #[derive(Clone)]
@@ -80,7 +79,6 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
         let engine = build_config.exec_engine.as_ref().cloned().unwrap_or({
             Arc::new(Box::new(ProcessEngine))
         });
-        let rustflags = env::var("RUSTFLAGS").ok();
         Ok(Context {
             target_triple: target_triple,
             host: host,
@@ -100,7 +98,6 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
             build_scripts: HashMap::new(),
             build_explicit_deps: HashMap::new(),
             links: Links::new(),
-            rustflags: rustflags,
         })
     }
 
@@ -621,7 +618,9 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
         &self.profiles.dev
     }
 
-    pub fn rustflags_args(&self, unit: &Unit) -> Vec<String> {
+    // Acquire extra flags to pass to the compiler from the
+    // RUSTFLAGS environment variable and similar config values
+    pub fn rustflags_args(&self, unit: &Unit) -> CargoResult<Vec<String>> {
         // We *want* to apply RUSTFLAGS only to builds for the
         // requested target architecture, and not to things like build
         // scripts and plugins, which may be for an entirely different
@@ -641,24 +640,50 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
         // This means that, e.g. even if the specified --target is the
         // same as the host, build scripts in plugins won't get
         // RUSTFLAGS.
+        //
+        // Similarly, if --target is not specified we'll look in the
+        // config for the `target.rustflags` key; if it is specified
+        // we'll look in `target.$triple.rustflasg`.
         let compiling_with_target = self.build_config.requested_target.is_some();
         let is_target_kind = unit.kind == Kind::Target;
-        let use_rustflags = match (compiling_with_target, is_target_kind) {
-            (false, _) => true,
+
+        let use_target_rustflags = match (compiling_with_target,
+                                            is_target_kind) {
+            (false, _) => false,
             (true, true) => true,
-            (true, false) => false,
+            (true, false) => {
+                // This is probably a build script or plugin and we're
+                // compiling with --target. In this scenario there are
+                // no rustflags we can apply.
+                return Ok(Vec::new());
+            }
         };
 
-        if !use_rustflags { return Vec::new(); }
-
-        let mut args = Vec::new();
-
-        if let Some(ref a) = self.rustflags {
-            for s in a.split(" ") {
-                args.push(s.to_owned());
-            }
+        // First try RUSTFLAGS from the environment
+        if let Some(a) = env::var("RUSTFLAGS").ok() {
+            let args = a.split(" ").map(str::trim).map(str::to_string);
+            return Ok(args.collect());
         }
 
-        args
+        // Then the build.rustflags value
+        if let Some(args) = try!(self.config.get_list("build.rustflags")) {
+            let args = args.val.into_iter().map(|a| a.0);
+            return Ok(args.collect());
+        }
+
+        // Then try the target config
+        let ref config_key = if !use_target_rustflags {
+            format!("target.rustflags")
+        } else {
+            let triple = self.build_config.requested_target.as_ref().unwrap();
+            format!("target.{}.rustflags", triple)
+        };
+
+        if let Some(args) = try!(self.config.get_list(config_key)) {
+            let args = args.val.into_iter().map(|a| a.0);
+            return Ok(args.collect());
+        }
+
+        Ok(Vec::new())
     }
 }
