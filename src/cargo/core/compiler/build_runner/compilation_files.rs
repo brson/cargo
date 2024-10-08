@@ -596,6 +596,8 @@ fn compute_metadata(
     let mut deps_metadata = build_runner
         .unit_deps(unit)
         .iter()
+        //.filter(|dep| unit.kind == dep.unit.kind)
+        .filter(|dep| unit.target == dep.unit.target)
         .map(|dep| metadata_of(&dep.unit, build_runner, metas).meta_hash)
         .collect::<Vec<_>>();
     deps_metadata.sort();
