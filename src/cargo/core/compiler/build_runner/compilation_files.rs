@@ -620,6 +620,7 @@ fn compute_metadata(
     let deps_metadata = build_runner
         .unit_deps(unit)
         .iter()
+        .filter(|dep| unit.kind == dep.unit.kind)
         .map(|dep| *metadata_of(&dep.unit, build_runner, metas))
         .collect::<Vec<_>>();
     let use_extra_filename = use_extra_filename(bcx, unit);
