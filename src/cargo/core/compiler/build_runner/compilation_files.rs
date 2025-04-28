@@ -91,8 +91,7 @@ impl fmt::Debug for UnitHash {
 #[derive(Copy, Clone, Debug)]
 pub struct Metadata {
     unit_id: UnitHash,
-    c_metadata_without_target: UnitHash,
-    c_metadata_with_target: UnitHash,
+    c_metadata: UnitHash,
     c_extra_filename: Option<UnitHash>,
 }
 
@@ -104,7 +103,7 @@ impl Metadata {
 
     /// A hash to add to symbol naming through `-C metadata`
     pub fn c_metadata(&self) -> UnitHash {
-        self.c_metadata_with_target
+        self.c_metadata
     }
 
     /// A hash to add to file names through `-C extra-filename`
@@ -712,16 +711,14 @@ fn compute_metadata(
         target_configs_are_different.hash(&mut shared_hasher);
     }
 
-    let mut c_metadata_without_target_hasher = shared_hasher.clone();
+    let mut c_metadata_hasher = shared_hasher.clone();
     // Mix in the target-metadata of all the dependencies of this target.
     let mut dep_c_metadata_hashes = deps_metadata
         .iter()
-        .map(|m| m.c_metadata_without_target)
+        .map(|m| m.c_metadata)
         .collect::<Vec<_>>();
     dep_c_metadata_hashes.sort();
-    dep_c_metadata_hashes.hash(&mut c_metadata_without_target_hasher);
-
-    let mut c_metadata_with_target_hasher = c_metadata_without_target_hasher.clone();
+    dep_c_metadata_hashes.hash(&mut c_metadata_hasher);
 
     let mut c_extra_filename_hasher = shared_hasher.clone();
     // Mix in the target-metadata of all the dependencies of this target.
@@ -749,15 +746,12 @@ fn compute_metadata(
         }
     }
 
-    // Finally throw in the target name/kind where needed. This ensures that concurrent
+    // Finally throw in the target name/kind. This ensures that concurrent
     // compiles of targets in the same crate don't collide.
-    unit.target.name().hash(&mut c_metadata_with_target_hasher);
-    unit.target.kind().hash(&mut c_metadata_with_target_hasher);
     unit.target.name().hash(&mut c_extra_filename_hasher);
     unit.target.kind().hash(&mut c_extra_filename_hasher);
 
-    let c_metadata_without_target = UnitHash(Hasher::finish(&c_metadata_without_target_hasher));
-    let c_metadata_with_target = UnitHash(Hasher::finish(&c_metadata_with_target_hasher));
+    let c_metadata = UnitHash(Hasher::finish(&c_metadata_hasher));
     let c_extra_filename = UnitHash(Hasher::finish(&c_extra_filename_hasher));
     let unit_id = c_extra_filename;
 
@@ -765,8 +759,7 @@ fn compute_metadata(
 
     Metadata {
         unit_id,
-        c_metadata_without_target,
-        c_metadata_with_target,
+        c_metadata,
         c_extra_filename,
     }
 }
