@@ -6752,9 +6752,8 @@ fn renamed_uplifted_artifact_remains_unmodified_after_rebuild() {
     assert!(not_the_same, "renamed uplifted artifact must be unmodified");
 }
 
-use cargo_test_support::registry;
+use cargo_test_support::{registry, Project};
 
-#[ignore]
 #[cargo_test]
 fn wasm_c_metadata() {
     registry::init();
@@ -6762,8 +6761,8 @@ fn wasm_c_metadata() {
     let linux_triple = "x86_64-unknown-linux-gnu";
     let macos_triple = "aarch64-apple-darwin";
 
-    let linux_wrapper = rustc_mock_host_wrapper(linux_triple);
-    let macos_wrapper = rustc_mock_host_wrapper(macos_triple);
+    let (_l, linux_wrapper) = rustc_mock_host_wrapper(linux_triple);
+    let (_m, macos_wrapper) = rustc_mock_host_wrapper(macos_triple);
 
     let linux_host_metas = metas_with_host(linux_triple, linux_wrapper);
     let mac_host_metas = metas_with_host(macos_triple, macos_wrapper);
@@ -6791,7 +6790,7 @@ fn metas_with_host(_host: &str, rustc_wrapper: PathBuf) -> Metadata {
             ".cargo/config.toml",
             &format!("
                 [build]
-                rustc-wrapper = \"xxx{}\"
+                rustc-wrapper = \"{}\"
             ", rustc_wrapper.display()),
         )
         .file("build.rs", "fn main() {}")
@@ -6800,11 +6799,9 @@ fn metas_with_host(_host: &str, rustc_wrapper: PathBuf) -> Metadata {
 
     let gctx = GlobalContext::new(
         Shell::from_write(Box::new(Vec::new())),
-        paths::cargo_home(),
+        p.root(),
         paths::cargo_home(),
     );
-    // fixme wrapper not getting used
-    eprintln!("{:#?}", gctx.build_config().unwrap());
     let ws = Workspace::new(&p.root().join("Cargo.toml"), &gctx).unwrap();
 
     let mut co = CompileOptions::new(&gctx, CompileMode::Build).unwrap();
@@ -6825,7 +6822,7 @@ fn metas_with_host(_host: &str, rustc_wrapper: PathBuf) -> Metadata {
     metas
 }
 
-fn rustc_mock_host_wrapper(host: &str) -> PathBuf {
+fn rustc_mock_host_wrapper(host: &str) -> (Project, PathBuf) {
     let exe_name = format!("rustc-host-wrapper-{host}");
     let p = project()
         .at(paths::global_root().join(&exe_name))
@@ -6834,8 +6831,9 @@ fn rustc_mock_host_wrapper(host: &str) -> PathBuf {
             "src/main.rs",
             &format!("
             fn main() {{
-panic!(\"foo\");
-                eprintln!(\"
+let args = std::env::args().collect::<Vec<_>>();
+if args[2] == \"-vV\" {{
+                println!(\"
 rustc 1.86.0 (05f9846f8 2025-03-31)
 binary: rustc
 commit-hash: 05f9846f893b09a1be1fc8560e33fc3c815cfecb
@@ -6844,11 +6842,14 @@ host: {host}
 release: 1.86.0
 LLVM version: 19.1.7
                 \");
+}} else {{
+    panic!(\"todo\");
+}}
             }}
             "),
         )
         .build();
     p.cargo("build").run();
-    let path = p.bin(&exe_name);
-    path
+    let path = p.bin("rustc-echo-wrapper");
+    (p, path)
 }

@@ -423,6 +423,7 @@ impl GlobalContext {
     pub fn load_global_rustc(&self, ws: Option<&Workspace<'_>>) -> CargoResult<Rustc> {
         let cache_location =
             ws.map(|ws| ws.build_dir().join(".rustc_info.json").into_path_unlocked());
+        eprintln!("XXX {:?}", &self.build_config()?.rustc_wrapper);
         let wrapper = self.maybe_get_tool("rustc_wrapper", &self.build_config()?.rustc_wrapper);
         let rustc_workspace_wrapper = self.maybe_get_tool(
             "rustc_workspace_wrapper",
